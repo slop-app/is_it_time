@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Signal</title>
+
+  <style>
+    :root {
+      color-scheme: light;
+      --progress: 0;
+      --energy: 0;
+      --hue: 210;
+      --bg-a: #f8f8f4;
+      --bg-b: #eceee8;
+      --text: #151816;
+      --muted: #686f6c;
+      --panel: rgb(255 255 250 / 0.76);
+      --border: rgb(22 26 23 / 0.12);
+      --track: rgb(20 24 22 / 0.11);
+      --glow: rgb(0 196 255 / 0);
+      --scheme-speed: 8s;
+      --scheme-speed-slow: 10s;
+      --pulse-speed: 3s;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      padding: 24px;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      font-variant-numeric: tabular-nums;
+      background:
+        radial-gradient(circle at 15% 10%, hsl(var(--hue) 100% 74% / calc(var(--energy) * 0.68)), transparent 30%),
+        radial-gradient(circle at 88% 18%, hsl(calc(var(--hue) + 95) 100% 68% / calc(var(--energy) * 0.58)), transparent 28%),
+        radial-gradient(circle at 74% 92%, hsl(calc(var(--hue) + 190) 100% 66% / calc(var(--energy) * 0.64)), transparent 34%),
+        linear-gradient(145deg, var(--bg-a), var(--bg-b));
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: -42vmax;
+      pointer-events: none;
+      background:
+        conic-gradient(
+          from calc(var(--progress) * 3.6deg),
+          hsl(350 100% 62% / calc(var(--energy) * 0.25)),
+          hsl(42 100% 58% / calc(var(--energy) * 0.22)),
+          hsl(105 100% 56% / calc(var(--energy) * 0.20)),
+          hsl(178 100% 55% / calc(var(--energy) * 0.23)),
+          hsl(230 100% 64% / calc(var(--energy) * 0.24)),
+          hsl(294 100% 66% / calc(var(--energy) * 0.22)),
+          hsl(350 100% 62% / calc(var(--energy) * 0.25))
+        );
+      filter: blur(62px) saturate(calc(1 + var(--energy) * 1.6));
+      opacity: calc(0.10 + var(--energy) * 0.86);
+      transform: rotate(calc(var(--progress) * 1.8deg));
+    }
+
+    .shell {
+      position: relative;
+      width: min(100%, 540px);
+      isolation: isolate;
+      padding: 28px;
+      overflow: hidden;
+      border: 1px solid hsl(var(--hue) 85% 58% / calc(0.16 + var(--energy) * 0.48));
+      border-radius: 8px;
+      background:
+        linear-gradient(180deg, rgb(255 255 252 / 0.86), rgb(255 255 252 / 0.61)),
+        linear-gradient(135deg, hsl(var(--hue) 100% 76% / calc(var(--energy) * 0.22)), transparent 52%);
+      box-shadow:
+        0 22px 70px rgb(16 20 18 / 0.13),
+        0 0 calc(8px + var(--energy) * 48px) hsl(var(--hue) 100% 62% / calc(var(--energy) * 0.44)),
+        0 0 calc(var(--energy) * 92px) hsl(calc(var(--hue) + 135) 100% 58% / calc(var(--energy) * 0.26));
+      backdrop-filter: blur(20px) saturate(calc(1 + var(--energy) * 1.05));
+    }
+
+    .shell::before {
+      content: "";
+      position: absolute;
+      inset: -2px -12%;
+      z-index: -1;
+      opacity: calc(var(--energy) * 0.9);
+      background:
+        linear-gradient(115deg, transparent 0 24%, rgb(255 255 255 / 0.44) 36%, transparent 48% 100%),
+        linear-gradient(
+          120deg,
+          hsl(var(--hue) 100% 58% / 0.24),
+          hsl(calc(var(--hue) + 80) 100% 58% / 0.18),
+          hsl(calc(var(--hue) + 170) 100% 62% / 0.23)
+      );
+      transform: translateX(calc((var(--progress) - 50) * 0.12%));
+    }
+
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .range {
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 670;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .top-controls {
+      display: grid;
+      justify-items: end;
+      gap: 8px;
+      flex: 0 0 auto;
+      max-width: 48%;
+    }
+
+    .status {
+      flex: 0 0 auto;
+      max-width: 100%;
+      overflow: hidden;
+      padding: 8px 10px;
+      border: 1px solid hsl(var(--hue) 90% 56% / calc(0.18 + var(--energy) * 0.42));
+      border-radius: 6px;
+      background: rgb(255 255 255 / 0.52);
+      color: hsl(var(--hue) calc(18% + var(--energy) * 74%) calc(31% + var(--energy) * 8%));
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      box-shadow: 0 0 calc(var(--energy) * 24px) hsl(var(--hue) 100% 60% / calc(var(--energy) * 0.34));
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      width: 100%;
+      margin-bottom: 24px;
+      padding: 4px;
+      border: 1px solid rgb(22 26 23 / 0.10);
+      border-radius: 8px;
+      background: rgb(255 255 255 / 0.38);
+    }
+
+    .tab-button {
+      min-width: 0;
+      height: 34px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+    }
+
+    .tab-button[aria-selected="true"] {
+      border-color: hsl(var(--hue) 92% 56% / calc(0.15 + var(--energy) * 0.36));
+      background: rgb(255 255 255 / 0.64);
+      color: hsl(var(--hue) calc(22% + var(--energy) * 62%) calc(29% + var(--energy) * 8%));
+      box-shadow: 0 0 calc(var(--energy) * 18px) hsl(var(--hue) 100% 62% / calc(var(--energy) * 0.22));
+    }
+
+    .tab-button:focus-visible,
+    .settings-toggle:focus-visible,
+    .effect-select:focus-visible {
+      outline: 3px solid hsl(var(--hue) 100% 62% / 0.20);
+      outline-offset: 2px;
+    }
+
+    .effect-select {
+      width: 136px;
+      max-width: 100%;
+      padding: 7px 9px;
+      border: 1px solid hsl(var(--hue) 90% 56% / calc(0.15 + var(--energy) * 0.38));
+      border-radius: 6px;
+      background: rgb(255 255 255 / 0.52);
+      color: hsl(var(--hue) calc(18% + var(--energy) * 62%) calc(27% + var(--energy) * 8%));
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1;
+      outline: none;
+      box-shadow: 0 0 calc(var(--energy) * 18px) hsl(calc(var(--hue) + 90) 100% 62% / calc(var(--energy) * 0.24));
+    }
+
+    .effect-select:focus {
+      border-color: hsl(var(--hue) 100% 48% / 0.78);
+      box-shadow:
+        0 0 0 3px hsl(var(--hue) 100% 62% / 0.16),
+        0 0 calc(var(--energy) * 22px) hsl(calc(var(--hue) + 90) 100% 62% / calc(var(--energy) * 0.30));
+    }
+
+    .readout {
+      display: flex;
+      align-items: end;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      min-width: 0;
+      margin-bottom: 20px;
+      line-height: 0.86;
+    }
+
+    .number {
+      flex: 0 0 auto;
+      width: 9.15ch;
+      max-width: calc(100% - 48px);
+      overflow: hidden;
+      color: transparent;
+      font-size: clamp(48px, 11.4vw, 80px);
+      font-weight: 780;
+      letter-spacing: 0;
+      font-feature-settings: "tnum" 1, "lnum" 1;
+      font-variant-numeric: tabular-nums lining-nums;
+      text-align: left;
+      white-space: nowrap;
+      background:
+        linear-gradient(
+          96deg,
+          #151816 0%,
+          hsl(var(--hue) 100% calc(40% + var(--energy) * 10%)) 32%,
+          hsl(calc(var(--hue) + 96) 100% calc(43% + var(--energy) * 8%)) 64%,
+          hsl(calc(var(--hue) + 204) 100% calc(44% + var(--energy) * 8%)) 100%
+        );
+      background-size: calc(120% + var(--energy) * 160%) 100%;
+      background-position: calc(var(--progress) * 1%) 50%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      text-shadow:
+        0 0 calc(var(--energy) * 20px) hsl(var(--hue) 100% 58% / calc(var(--energy) * 0.28)),
+        0 0 calc(var(--energy) * 44px) hsl(calc(var(--hue) + 130) 100% 58% / calc(var(--energy) * 0.18));
+    }
+
+    body[data-scheme="rolling"] .number {
+      background:
+        linear-gradient(
+          90deg,
+          hsl(0 100% calc(42% + var(--energy) * 10%)),
+          hsl(42 100% calc(42% + var(--energy) * 10%)),
+          hsl(112 100% calc(39% + var(--energy) * 12%)),
+          hsl(184 100% calc(38% + var(--energy) * 13%)),
+          hsl(246 100% calc(45% + var(--energy) * 10%)),
+          hsl(302 100% calc(44% + var(--energy) * 12%)),
+          hsl(0 100% calc(42% + var(--energy) * 10%))
+        );
+      background-size: calc(190% + var(--energy) * 180%) 100%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      filter: saturate(calc(1 + var(--energy) * 1.9));
+      animation: ledRoll var(--scheme-speed) linear infinite;
+    }
+
+    body[data-scheme="aurora"] .number {
+      background:
+        radial-gradient(circle at 18% 42%, hsl(calc(var(--hue) + 132) 100% 54% / calc(0.46 + var(--energy) * 0.44)), transparent 32%),
+        radial-gradient(circle at 76% 62%, hsl(calc(var(--hue) + 248) 100% 58% / calc(0.34 + var(--energy) * 0.42)), transparent 30%),
+        linear-gradient(
+          112deg,
+          hsl(208 26% 15%),
+          hsl(calc(var(--hue) + 18) 100% calc(34% + var(--energy) * 12%)),
+          hsl(calc(var(--hue) + 118) 100% calc(38% + var(--energy) * 12%)),
+          hsl(208 26% 15%)
+        );
+      background-size: calc(160% + var(--energy) * 130%) 190%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      filter: saturate(calc(1 + var(--energy) * 1.45));
+      animation: auroraDrift var(--scheme-speed-slow) ease-in-out infinite alternate;
+    }
+
+    body[data-scheme="pulse"] .number {
+      background:
+        radial-gradient(circle at 50% 50%, rgb(255 255 255 / calc(0.08 + var(--energy) * 0.34)), transparent 26%),
+        linear-gradient(
+          96deg,
+          hsl(222 22% 14%),
+          hsl(calc(var(--hue) + 34) 100% calc(42% + var(--energy) * 13%)),
+          hsl(calc(var(--hue) + 126) 100% calc(48% + var(--energy) * 10%)),
+          hsl(222 22% 14%)
+        );
+      background-size: 190% 150%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      animation:
+        prismSlide var(--scheme-speed-slow) linear infinite,
+        glowPulse var(--pulse-speed) ease-in-out infinite;
+    }
+
+    body[data-scheme="scanner"] .number {
+      background:
+        repeating-linear-gradient(
+          90deg,
+          rgb(255 255 255 / calc(0.02 + var(--energy) * 0.18)) 0 2px,
+          transparent 2px 8px
+        ),
+        linear-gradient(
+          100deg,
+          hsl(210 24% 14%) 0%,
+          hsl(210 24% 14%) 30%,
+          hsl(var(--hue) 100% calc(42% + var(--energy) * 13%)) 43%,
+          hsl(calc(var(--hue) + 92) 100% calc(54% + var(--energy) * 10%)) 49%,
+          hsl(calc(var(--hue) + 202) 100% calc(48% + var(--energy) * 12%)) 56%,
+          hsl(210 24% 14%) 70%,
+          hsl(210 24% 14%) 100%
+        );
+      background-size: calc(220% + var(--energy) * 180%) 100%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      animation: scannerSweep var(--scheme-speed) cubic-bezier(0.45, 0, 0.2, 1) infinite;
+    }
+
+    body[data-scheme="prism"] .number {
+      background:
+        linear-gradient(
+          94deg,
+          hsl(210 22% 13%) 0%,
+          hsl(210 22% 13%) 24%,
+          hsl(calc(var(--hue) + 18) 100% calc(38% + var(--energy) * 10%)) 42%,
+          hsl(calc(var(--hue) + 132) 100% calc(44% + var(--energy) * 10%)) 58%,
+          hsl(calc(var(--hue) + 238) 100% calc(40% + var(--energy) * 12%)) 76%,
+          hsl(210 22% 13%) 100%
+        );
+      background-size: calc(150% + var(--energy) * 140%) 100%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      filter: contrast(calc(1 + var(--energy) * 0.22)) saturate(calc(1 + var(--energy) * 1.2));
+      animation: prismSlide var(--scheme-speed-slow) linear infinite;
+    }
+
+    @keyframes ledRoll {
+      from { background-position: 0% 50%; }
+      to { background-position: 220% 50%; }
+    }
+
+    @keyframes auroraDrift {
+      from { background-position: 0% 20%; }
+      to { background-position: 100% 80%; }
+    }
+
+    @keyframes prismSlide {
+      from { background-position: 0% 50%; }
+      to { background-position: 160% 50%; }
+    }
+
+    @keyframes scannerSweep {
+      from { background-position: 160% 50%; }
+      to { background-position: -60% 50%; }
+    }
+
+    @keyframes glowPulse {
+      0%,
+      100% {
+        text-shadow:
+          0 0 calc(var(--energy) * 18px) hsl(var(--hue) 100% 58% / calc(var(--energy) * 0.22)),
+          0 0 calc(var(--energy) * 36px) hsl(calc(var(--hue) + 130) 100% 58% / calc(var(--energy) * 0.14));
+      }
+
+      50% {
+        text-shadow:
+          0 0 calc(4px + var(--energy) * 32px) hsl(var(--hue) 100% 62% / calc(var(--energy) * 0.50)),
+          0 0 calc(10px + var(--energy) * 68px) hsl(calc(var(--hue) + 130) 100% 58% / calc(var(--energy) * 0.34));
+      }
+    }
+
+    .symbol {
+      display: block;
+      flex: 0 0 auto;
+      width: 0.82em;
+      color: hsl(calc(var(--hue) + 22) calc(22% + var(--energy) * 76%) calc(37% + var(--energy) * 10%));
+      font-size: clamp(24px, 5vw, 36px);
+      font-weight: 720;
+      letter-spacing: 0;
+      line-height: 1;
+      text-align: left;
+      text-shadow: 0 0 calc(var(--energy) * 20px) hsl(calc(var(--hue) + 80) 100% 62% / calc(var(--energy) * 0.35));
+      transform: translateY(-0.08em);
+    }
+
+    .track {
+      position: relative;
+      width: 100%;
+      height: 14px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--track);
+      box-shadow: inset 0 1px 4px rgb(18 22 20 / 0.10);
+    }
+
+    .fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background:
+        linear-gradient(
+          90deg,
+          hsl(210 18% 16%),
+          hsl(var(--hue) 100% 56%),
+          hsl(calc(var(--hue) + 58) 100% 56%),
+          hsl(calc(var(--hue) + 128) 100% 57%),
+          hsl(calc(var(--hue) + 220) 100% 62%)
+        );
+      background-size: calc(120% + var(--energy) * 170%) 100%;
+      box-shadow:
+        0 0 calc(6px + var(--energy) * 26px) hsl(var(--hue) 100% 58% / calc(0.20 + var(--energy) * 0.52)),
+        0 0 calc(var(--energy) * 42px) hsl(calc(var(--hue) + 160) 100% 58% / calc(var(--energy) * 0.32));
+    }
+
+    .track::after {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, rgb(255 255 255 / calc(0.24 + var(--energy) * 0.48)), transparent);
+      opacity: calc(0.3 + var(--energy) * 0.45);
+      transform: translateX(calc(-100% + var(--progress) * 1%));
+    }
+
+    .flavor {
+      min-height: 20px;
+      margin-top: 14px;
+      color: hsl(var(--hue) calc(18% + var(--energy) * 70%) calc(34% + var(--energy) * 10%));
+      font-size: 13px;
+      font-weight: 620;
+      line-height: 1.35;
+      text-align: center;
+      text-shadow: 0 0 calc(var(--energy) * 18px) hsl(calc(var(--hue) + 80) 100% 62% / calc(var(--energy) * 0.32));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .settings {
+      margin-top: 16px;
+      border-top: 1px solid rgb(22 26 23 / 0.09);
+    }
+
+    .settings-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+      line-height: 1;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+
+    .settings-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .settings-toggle::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform 160ms ease;
+    }
+
+    .settings[open] .settings-toggle::before {
+      transform: rotate(45deg);
+    }
+
+    .settings-panel {
+      display: grid;
+      gap: 14px;
+      padding-top: 8px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .setting-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 680;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .fact {
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid hsl(var(--hue) 88% 58% / calc(0.12 + var(--energy) * 0.28));
+      border-radius: 6px;
+      background: rgb(255 255 255 / 0.42);
+    }
+
+    .fact-label {
+      margin-bottom: 7px;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .fact-value {
+      overflow: hidden;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 680;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 16px;
+      }
+
+      .shell {
+        padding: 22px;
+      }
+
+      .topline {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .status {
+        max-width: 100%;
+        justify-self: start;
+        text-align: left;
+      }
+
+      .top-controls {
+        max-width: 100%;
+        justify-items: start;
+      }
+
+      .facts {
+        grid-template-columns: 1fr;
+      }
+
+      .setting-row {
+        display: grid;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="shell" aria-live="polite">
+    <div class="topline">
+      <div>
+        <div class="label">Signal</div>
+        <div class="range" id="windowLabel">Today</div>
+      </div>
+      <div class="top-controls">
+        <div class="status" id="status">Loading</div>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Progress range">
+      <button class="tab-button" type="button" role="tab" aria-selected="true" data-mode="day">Today</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" data-mode="arc">Mon-Thu</button>
+    </div>
+
+    <section aria-label="Progress meter">
+      <div class="readout">
+        <span class="number" id="percentNumber">00.00000</span>
+        <span class="symbol">%</span>
+      </div>
+
+      <div class="track" aria-hidden="true">
+        <div class="fill" id="progressFill"></div>
+      </div>
+
+      <div class="flavor" id="flavorText">Ignition check.</div>
+    </section>
+
+    <details class="settings">
+      <summary class="settings-toggle">Settings</summary>
+      <div class="settings-panel">
+        <div class="setting-row">
+          <div class="setting-label">Neon</div>
+          <select class="effect-select" id="effectSelect" aria-label="Number effect">
+            <option value="prism">Glass prism</option>
+            <option value="rolling">Rolling RGB</option>
+            <option value="aurora">Aurora ink</option>
+            <option value="pulse">Soft pulse</option>
+            <option value="scanner">Laser scan</option>
+          </select>
+        </div>
+
+        <section class="facts" aria-label="Timing details">
+          <div class="fact">
+            <div class="fact-label">Now</div>
+            <div class="fact-value" id="currentTime">--:--:--</div>
+          </div>
+          <div class="fact">
+            <div class="fact-label">Elapsed</div>
+            <div class="fact-value" id="elapsedTime">--</div>
+          </div>
+          <div class="fact">
+            <div class="fact-label">Left</div>
+            <div class="fact-value" id="remainingTime">--</div>
+          </div>
+        </section>
+      </div>
+    </details>
+  </main>
+
+  <script>
+    const START_HOUR = 9;
+    const START_MINUTE = 0;
+    const END_HOUR = 18;
+    const END_MINUTE = 0;
+
+    const root = document.documentElement;
+    const percentNumber = document.getElementById("percentNumber");
+    const progressFill = document.getElementById("progressFill");
+    const statusEl = document.getElementById("status");
+    const windowLabel = document.getElementById("windowLabel");
+    const currentTimeEl = document.getElementById("currentTime");
+    const elapsedTimeEl = document.getElementById("elapsedTime");
+    const remainingTimeEl = document.getElementById("remainingTime");
+    const flavorText = document.getElementById("flavorText");
+    const effectSelect = document.getElementById("effectSelect");
+    const modeButtons = document.querySelectorAll(".tab-button");
+    const EFFECT_STORAGE_KEY = "isItTimeNumberEffect";
+    const MODE_STORAGE_KEY = "isItTimeProgressMode";
+    let activeMode = "day";
+
+    const flavorBank = {
+      before: [
+        "Tiny engines stretching. No heroics required.",
+        "The meter is awake, just not making a scene.",
+        "Perfectly legal warm-up lap.",
+        "Nothing to prove yet. Hydrate mysteriously."
+      ],
+      early: [
+        "Small number, honest effort.",
+        "The bar has shoes on. Barely.",
+        "Early pixels are doing their best.",
+        "One calm step, then another suspiciously calm step.",
+        "You are not behind. The percentage is just dramatic."
+      ],
+      firstHalf: [
+        "Momentum found the light switch.",
+        "The graph is quietly rooting for you.",
+        "Respectable progress. Very adult of everyone.",
+        "Tiny wins are still wins, just with better posture.",
+        "Keep going. The number has started behaving."
+      ],
+      secondHalf: [
+        "Past the squishy middle. Excellent news.",
+        "The meter is nodding like it understands.",
+        "This is the part where persistence looks suspiciously like skill.",
+        "Not finished, but definitely no longer hypothetical.",
+        "The percentage has stopped whispering and started helping."
+      ],
+      late: [
+        "Visible progress. Emotionally load-bearing.",
+        "The end of the bar is making eye contact.",
+        "You can almost hear the tiny spreadsheet applause.",
+        "Steady now. The graph believes in follow-through.",
+        "Nearly cooked, in the wholesome sense."
+      ],
+      final: [
+        "Nearly there. The pixels know it.",
+        "Final stretch. Do not start a side quest.",
+        "Excellent form. Very aerodynamic.",
+        "The number is basically clearing its throat.",
+        "Hold course. Dramatic blinking optional."
+      ],
+      after: [
+        "Done enough for the meter to stop arguing.",
+        "Full spectrum achieved. Nicely handled.",
+        "The neon can rest now. So can you, ideally.",
+        "Complete. The color did its job.",
+        "The graph has no further notes."
+      ]
+    };
+
+    const selectedFlavor = Object.fromEntries(
+      Object.entries(flavorBank).map(([key, lines]) => [
+        key,
+        lines[Math.floor(Math.random() * lines.length)]
+      ])
+    );
+
+    function setNumberEffect(effect) {
+      const allowedEffects = ["prism", "rolling", "aurora", "pulse", "scanner"];
+      const normalizedEffect = allowedEffects.includes(effect) ? effect : "prism";
+
+      document.body.dataset.scheme = normalizedEffect;
+      effectSelect.value = normalizedEffect;
+      localStorage.setItem(EFFECT_STORAGE_KEY, normalizedEffect);
+    }
+
+    setNumberEffect(localStorage.getItem(EFFECT_STORAGE_KEY));
+    effectSelect.addEventListener("change", () => {
+      setNumberEffect(effectSelect.value);
+    });
+
+    function setMode(mode) {
+      activeMode = mode === "arc" ? "arc" : "day";
+      localStorage.setItem(MODE_STORAGE_KEY, activeMode);
+
+      modeButtons.forEach((button) => {
+        const isSelected = button.dataset.mode === activeMode;
+        button.setAttribute("aria-selected", String(isSelected));
+      });
+
+      windowLabel.textContent = activeMode === "arc" ? "Mon-Thu" : "Today";
+    }
+
+    setMode(localStorage.getItem(MODE_STORAGE_KEY));
+    modeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        setMode(button.dataset.mode);
+        update();
+      });
+    });
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function formatClock(date) {
+      return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function formatDuration(milliseconds) {
+      const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      if (hours > 0) return `${hours}h ${pad(minutes)}m`;
+      if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+      return `${seconds}s`;
+    }
+
+    function smoothStep(edge0, edge1, value) {
+      const x = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+      return x * x * (3 - 2 * x);
+    }
+
+    function getDailyBounds(now) {
+      const start = new Date(now);
+      start.setHours(START_HOUR, START_MINUTE, 0, 0);
+
+      const end = new Date(now);
+      end.setHours(END_HOUR, END_MINUTE, 0, 0);
+
+      return { start, end };
+    }
+
+    function getArcBounds(now) {
+      const start = new Date(now);
+      const daysSinceMonday = (start.getDay() + 6) % 7;
+      start.setDate(start.getDate() - daysSinceMonday);
+      start.setHours(START_HOUR, START_MINUTE, 0, 0);
+
+      const end = new Date(start);
+      end.setDate(start.getDate() + 3);
+      end.setHours(END_HOUR, END_MINUTE, 0, 0);
+
+      return { start, end };
+    }
+
+    function getBounds(now) {
+      return activeMode === "arc" ? getArcBounds(now) : getDailyBounds(now);
+    }
+
+    function setMood(progress) {
+      const earlyGlow = smoothStep(8, 48, progress) * 0.24;
+      const lateGlow = smoothStep(52, 100, progress) * 0.76;
+      const energy = Math.min(1, earlyGlow + lateGlow);
+      const hue = 205 + progress * 2.55;
+
+      root.style.setProperty("--progress", progress.toFixed(3));
+      root.style.setProperty("--energy", energy.toFixed(3));
+      root.style.setProperty("--hue", hue.toFixed(1));
+      root.style.setProperty("--scheme-speed", `${(8.5 - energy * 5.2).toFixed(2)}s`);
+      root.style.setProperty("--scheme-speed-slow", `${(10.5 - energy * 6.1).toFixed(2)}s`);
+      root.style.setProperty("--pulse-speed", `${(3.1 - energy * 1.7).toFixed(2)}s`);
+    }
+
+    function update() {
+      const now = new Date();
+      const { start, end } = getBounds(now);
+      const total = end - start;
+      const progress = Math.max(0, Math.min(100, ((now - start) / total) * 100));
+
+      percentNumber.textContent = progress.toFixed(5).padStart(8, "0");
+      progressFill.style.width = `${progress}%`;
+      currentTimeEl.textContent = formatClock(now);
+      setMood(progress);
+
+      if (now < start) {
+        statusEl.textContent = "Quiet";
+        elapsedTimeEl.textContent = "0s";
+        remainingTimeEl.textContent = formatDuration(end - start);
+        flavorText.textContent = selectedFlavor.before;
+      } else if (now >= end) {
+        statusEl.textContent = "Done";
+        elapsedTimeEl.textContent = formatDuration(end - start);
+        remainingTimeEl.textContent = "0s";
+        flavorText.textContent = selectedFlavor.after;
+      } else if (progress >= 92) {
+        statusEl.textContent = "Nearly";
+        elapsedTimeEl.textContent = formatDuration(now - start);
+        remainingTimeEl.textContent = formatDuration(end - now);
+        flavorText.textContent = selectedFlavor.final;
+      } else if (progress >= 70) {
+        statusEl.textContent = "Bright";
+        elapsedTimeEl.textContent = formatDuration(now - start);
+        remainingTimeEl.textContent = formatDuration(end - now);
+        flavorText.textContent = progress >= 84
+          ? selectedFlavor.late
+          : selectedFlavor.secondHalf;
+      } else {
+        statusEl.textContent = "Moving";
+        elapsedTimeEl.textContent = formatDuration(now - start);
+        remainingTimeEl.textContent = formatDuration(end - now);
+        flavorText.textContent = progress >= 45
+          ? selectedFlavor.firstHalf
+          : selectedFlavor.early;
+      }
+    }
+
+    function animate() {
+      update();
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
