@@ -19,13 +19,21 @@ const arcEndDaySelect = document.getElementById("arcEndDaySelect");
 const settingsMenu = document.getElementById("settingsMenu");
 const modeButtons = document.querySelectorAll(".tab-button");
 const arcModeButton = document.querySelector('[data-mode="arc"]');
+const scheduleButtons = document.querySelectorAll(".schedule-button");
 const fireworksLayer = document.getElementById("fireworksLayer");
 const EFFECT_STORAGE_KEY = "isItTimeNumberEffect";
 const MODE_STORAGE_KEY = "isItTimeProgressMode";
 const ARC_END_DAY_STORAGE_KEY = "isItTimeArcEndDay";
+const SCHEDULE_STORAGE_KEY = "isItTimeWeeklySchedule";
 const PAYDAY_DAY = 24;
 const DEFAULT_ARC_END_DAY = 3;
 const MILESTONE_STEP = 10;
+const SCHEDULE_VALUES = ["work", "half", "off"];
+const SCHEDULE_LABELS = {
+  work: "Work",
+  half: "Half",
+  off: "Leave"
+};
 const FIREWORK_COLORS = [
   "hsl(350 100% 62%)",
   "hsl(42 100% 58%)",
@@ -39,6 +47,7 @@ const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let activeMode = "day";
 let activeArcEndDay = DEFAULT_ARC_END_DAY;
+let weeklySchedule = Array(WEEKDAY_LABELS.length).fill("work");
 let milestoneState = {
   key: "",
   lastProgress: null,
@@ -149,6 +158,60 @@ arcEndDaySelect.addEventListener("change", () => {
   update();
 });
 
+function normalizeScheduleValue(value) {
+  return SCHEDULE_VALUES.includes(value) ? value : "work";
+}
+
+function readStoredSchedule() {
+  try {
+    const parsedSchedule = JSON.parse(localStorage.getItem(SCHEDULE_STORAGE_KEY));
+
+    if (!Array.isArray(parsedSchedule)) return Array(WEEKDAY_LABELS.length).fill("work");
+
+    return WEEKDAY_LABELS.map((_, index) => normalizeScheduleValue(parsedSchedule[index]));
+  } catch {
+    return Array(WEEKDAY_LABELS.length).fill("work");
+  }
+}
+
+function saveSchedule() {
+  localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(weeklySchedule));
+}
+
+function syncScheduleControls() {
+  scheduleButtons.forEach((button) => {
+    const dayIndex = Number(button.dataset.scheduleDay);
+    const scheduleValue = normalizeScheduleValue(weeklySchedule[dayIndex]);
+    const stateEl = button.querySelector(".schedule-day-state");
+
+    button.dataset.scheduleValue = scheduleValue;
+    button.setAttribute("aria-label", `${WEEKDAY_LABELS[dayIndex]} schedule: ${SCHEDULE_LABELS[scheduleValue]}`);
+    button.title = `${WEEKDAY_LABELS[dayIndex]}: ${SCHEDULE_LABELS[scheduleValue]}`;
+    stateEl.textContent = SCHEDULE_LABELS[scheduleValue];
+  });
+}
+
+function setScheduleDay(day, value) {
+  const dayIndex = Number(day);
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= WEEKDAY_LABELS.length) return;
+
+  weeklySchedule[dayIndex] = normalizeScheduleValue(value);
+  saveSchedule();
+  syncScheduleControls();
+}
+
+weeklySchedule = readStoredSchedule();
+syncScheduleControls();
+scheduleButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const currentValue = normalizeScheduleValue(weeklySchedule[Number(button.dataset.scheduleDay)]);
+    const nextIndex = (SCHEDULE_VALUES.indexOf(currentValue) + 1) % SCHEDULE_VALUES.length;
+
+    setScheduleDay(button.dataset.scheduleDay, SCHEDULE_VALUES[nextIndex]);
+    update();
+  });
+});
+
 function setMode(mode) {
   activeMode = mode === "arc" ? "arc" : "day";
   localStorage.setItem(MODE_STORAGE_KEY, activeMode);
@@ -211,27 +274,88 @@ function smoothStep(edge0, edge1, value) {
   return x * x * (3 - 2 * x);
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getWeekdayIndex(date) {
+  return (date.getDay() + 6) % 7;
+}
+
+function getDateAt(date, hour, minute) {
+  const result = new Date(date);
+  result.setHours(hour, minute, 0, 0);
+  return result;
+}
+
+function getMonday(date) {
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - getWeekdayIndex(monday));
+  return monday;
+}
+
+function getScheduledDay(date, dayIndex = getWeekdayIndex(date)) {
+  const start = getDateAt(date, START_HOUR, START_MINUTE);
+  const normalEnd = getDateAt(date, END_HOUR, END_MINUTE);
+  const normalDuration = normalEnd - start;
+  const scheduleValue = normalizeScheduleValue(weeklySchedule[dayIndex]);
+  const total = scheduleValue === "off"
+    ? 0
+    : normalDuration * (scheduleValue === "half" ? 0.5 : 1);
+  const end = new Date(start.getTime() + total);
+
+  return { start, end, total, scheduleValue };
+}
+
+function getScheduledElapsed(period, now) {
+  if (period.total === 0) return 0;
+  return clamp(now - period.start, 0, period.total);
+}
+
 function getDailyBounds(now) {
-  const start = new Date(now);
-  start.setHours(START_HOUR, START_MINUTE, 0, 0);
+  const period = getScheduledDay(now);
 
-  const end = new Date(now);
-  end.setHours(END_HOUR, END_MINUTE, 0, 0);
-
-  return { start, end };
+  return {
+    ...period,
+    elapsed: getScheduledElapsed(period, now),
+    noWork: period.total === 0
+  };
 }
 
 function getArcBounds(now) {
-  const start = new Date(now);
-  const daysSinceMonday = (start.getDay() + 6) % 7;
-  start.setDate(start.getDate() - daysSinceMonday);
-  start.setHours(START_HOUR, START_MINUTE, 0, 0);
+  const monday = getMonday(now);
+  let start = null;
+  let end = null;
+  let fallbackStart = null;
+  let fallbackEnd = null;
+  let total = 0;
+  let elapsed = 0;
 
-  const end = new Date(start);
-  end.setDate(start.getDate() + activeArcEndDay);
-  end.setHours(END_HOUR, END_MINUTE, 0, 0);
+  for (let dayIndex = 0; dayIndex <= activeArcEndDay; dayIndex += 1) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + dayIndex);
 
-  return { start, end };
+    const period = getScheduledDay(date, dayIndex);
+    fallbackStart = fallbackStart || period.start;
+    fallbackEnd = period.end;
+
+    if (period.total > 0) {
+      start = start || period.start;
+      end = period.end;
+    }
+
+    total += period.total;
+    elapsed += getScheduledElapsed(period, now);
+  }
+
+  return {
+    start: start || fallbackStart,
+    end: end || fallbackEnd,
+    total,
+    elapsed,
+    noWork: total === 0
+  };
 }
 
 document.addEventListener("click", (event) => {
@@ -286,8 +410,12 @@ function setMood(progress) {
   root.style.setProperty("--pulse-speed", `${(3.1 - energy * 1.7).toFixed(2)}s`);
 }
 
-function getWindowKey(start, end) {
-  return `${activeMode}:${start.getTime()}:${end.getTime()}`;
+function getWindowKey(bounds) {
+  return `${activeMode}:${startKey(bounds.start)}:${startKey(bounds.end)}:${bounds.total}:${weeklySchedule.join(",")}`;
+}
+
+function startKey(date) {
+  return date ? date.getTime() : "none";
 }
 
 function resetMilestoneState(progress, key) {
@@ -354,8 +482,8 @@ function launchFirework(milestone, progress, delay = 0) {
   }, delay);
 }
 
-function checkMilestones(progress, start, end) {
-  const key = getWindowKey(start, end);
+function checkMilestones(progress, bounds) {
+  const key = getWindowKey(bounds);
 
   if (milestoneState.key !== key || milestoneState.lastProgress === null || progress < milestoneState.lastProgress) {
     resetMilestoneState(progress, key);
@@ -384,43 +512,49 @@ function checkMilestones(progress, start, end) {
 
 function update() {
   const now = new Date();
-  const { start, end } = getBounds(now);
-  const total = end - start;
-  const progress = Math.max(0, Math.min(100, ((now - start) / total) * 100));
+  const bounds = getBounds(now);
+  const { start, end, total, elapsed, noWork } = bounds;
+  const progress = noWork ? 100 : clamp((elapsed / total) * 100, 0, 100);
+  const remaining = Math.max(0, total - elapsed);
 
   percentNumber.textContent = progress.toFixed(5).padStart(8, "0");
   progressFill.style.width = `${progress}%`;
   currentTimeEl.textContent = formatClock(now);
   setMood(progress);
   updatePayday(now);
-  checkMilestones(progress, start, end);
+  checkMilestones(progress, bounds);
 
-  if (now < start) {
+  if (noWork) {
+    statusEl.textContent = "Off";
+    elapsedTimeEl.textContent = "0s";
+    remainingTimeEl.textContent = "0s";
+    flavorText.textContent = selectedFlavor.after;
+  } else if (now < start) {
     statusEl.textContent = "Quiet";
     elapsedTimeEl.textContent = "0s";
-    remainingTimeEl.textContent = formatDuration(end - start);
+    remainingTimeEl.textContent = formatDuration(total);
     flavorText.textContent = selectedFlavor.before;
-  } else if (now >= end) {
+  } else if (remaining <= 0 || now >= end) {
     statusEl.textContent = "Done";
-    elapsedTimeEl.textContent = formatDuration(end - start);
+    elapsedTimeEl.textContent = formatDuration(total);
     remainingTimeEl.textContent = "0s";
     flavorText.textContent = selectedFlavor.after;
   } else if (progress >= 92) {
     statusEl.textContent = "Nearly";
-    elapsedTimeEl.textContent = formatDuration(now - start);
-    remainingTimeEl.textContent = formatDuration(end - now);
+    elapsedTimeEl.textContent = formatDuration(elapsed);
+    remainingTimeEl.textContent = formatDuration(remaining);
     flavorText.textContent = selectedFlavor.final;
   } else if (progress >= 70) {
     statusEl.textContent = "Bright";
-    elapsedTimeEl.textContent = formatDuration(now - start);
-    remainingTimeEl.textContent = formatDuration(end - now);
+    elapsedTimeEl.textContent = formatDuration(elapsed);
+    remainingTimeEl.textContent = formatDuration(remaining);
     flavorText.textContent = progress >= 84
       ? selectedFlavor.late
       : selectedFlavor.secondHalf;
   } else {
     statusEl.textContent = "Moving";
-    elapsedTimeEl.textContent = formatDuration(now - start);
-    remainingTimeEl.textContent = formatDuration(end - now);
+    elapsedTimeEl.textContent = formatDuration(elapsed);
+    remainingTimeEl.textContent = formatDuration(remaining);
     flavorText.textContent = progress >= 45
       ? selectedFlavor.firstHalf
       : selectedFlavor.early;
