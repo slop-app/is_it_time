@@ -50,6 +50,9 @@
                 <option value="6">Mon-Sun</option>
               </select>
             </div>
+            <div class="setting-note" id="weeklyAchievementNote">
+              Weekly achievements need Mon-Fri stable for 60s.
+            </div>
 
             <section class="schedule-settings" aria-label="Weekly schedule">
               <div class="setting-label">Schedule</div>
@@ -99,6 +102,7 @@
                 <div class="fact-value" id="remainingTime">--</div>
               </div>
             </section>
+
           </div>
         </details>
       </div>
@@ -106,7 +110,7 @@
 
     <div class="tabs" role="tablist" aria-label="Progress range">
       <button class="tab-button" type="button" role="tab" aria-selected="true" data-mode="day">Today</button>
-      <button class="tab-button" type="button" role="tab" aria-selected="false" data-mode="arc">Mon-Thu</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" data-mode="arc">Mon-Fri</button>
     </div>
 
     <section aria-label="Progress meter">
@@ -128,9 +132,61 @@
         </div>
         <div class="payday-counter" id="paydayCounter">--</div>
       </div>
+
+      <section class="achievements-panel" aria-label="Achievements">
+        <button class="achievements-launch" id="achievementsOpenButton" type="button">
+          <div>
+            <div class="achievement-label">Achievements</div>
+            <div class="achievement-summary" id="achievementRemaining">19 left this week</div>
+            <div class="achievement-meta">
+              <span id="achievementStreak">Streak 0</span>
+              <span id="achievementBest">PB 0/19</span>
+            </div>
+          </div>
+          <div class="achievement-actions">
+            <div class="achievement-count" id="achievementProgress">0/19</div>
+            <span class="achievement-open-label">Open</span>
+          </div>
+        </button>
+      </section>
     </section>
 
+    <div class="achievement-layer" id="achievementLayer" aria-live="polite"></div>
   </main>
+
+  <div class="achievements-screen" id="achievementsScreen" role="dialog" aria-modal="true" aria-labelledby="achievementsScreenTitle" hidden>
+    <div class="achievements-screen-panel">
+      <div class="achievements-screen-header">
+        <div>
+          <div class="achievement-label">Collection</div>
+          <h2 class="achievements-screen-title" id="achievementsScreenTitle">Achievements</h2>
+        </div>
+        <button class="achievements-close-button" id="achievementsCloseButton" type="button" aria-label="Close achievements">
+          Close
+        </button>
+      </div>
+
+      <div class="achievements-screen-actions">
+        <button class="achievement-reset-button" id="clearAchievementsButton" type="button">
+          Clear
+        </button>
+      </div>
+
+      <div class="achievement-categories">
+        <section class="achievement-category" aria-label="Weekly achievements">
+          <div class="achievement-category-title">Weekly</div>
+          <div class="achievement-badge-grid" id="weeklyAchievementBadges"></div>
+        </section>
+
+        <section class="achievement-category" aria-label="Bonus achievements">
+          <div class="achievement-category-title">Bonus</div>
+          <div class="achievement-badge-grid is-bonus-grid" id="bonusAchievementBadges"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts/achievements.js"></script>
   <script src="scripts/app.js"></script>
 </body>
 </html>

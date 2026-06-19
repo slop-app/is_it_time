@@ -16,17 +16,19 @@ const paydayDateEl = document.getElementById("paydayDate");
 const paydayCounterEl = document.getElementById("paydayCounter");
 const effectSelect = document.getElementById("effectSelect");
 const arcEndDaySelect = document.getElementById("arcEndDaySelect");
+const weeklyAchievementNote = document.getElementById("weeklyAchievementNote");
 const settingsMenu = document.getElementById("settingsMenu");
 const modeButtons = document.querySelectorAll(".tab-button");
 const arcModeButton = document.querySelector('[data-mode="arc"]');
 const scheduleButtons = document.querySelectorAll(".schedule-button");
 const fireworksLayer = document.getElementById("fireworksLayer");
+const achievementSystem = window.Achievements?.init();
 const EFFECT_STORAGE_KEY = "isItTimeNumberEffect";
 const MODE_STORAGE_KEY = "isItTimeProgressMode";
 const ARC_END_DAY_STORAGE_KEY = "isItTimeArcEndDay";
 const SCHEDULE_STORAGE_KEY = "isItTimeWeeklySchedule";
 const PAYDAY_DAY = 24;
-const DEFAULT_ARC_END_DAY = 3;
+const DEFAULT_ARC_END_DAY = 4;
 const MILESTONE_STEP = 10;
 const SCHEDULE_VALUES = ["work", "half", "off"];
 const SCHEDULE_LABELS = {
@@ -149,6 +151,12 @@ function setArcEndDay(day) {
   activeArcEndDay = normalizeArcEndDay(day);
   arcEndDaySelect.value = String(activeArcEndDay);
   localStorage.setItem(ARC_END_DAY_STORAGE_KEY, String(activeArcEndDay));
+  if (weeklyAchievementNote) {
+    weeklyAchievementNote.classList.toggle("is-warning", activeArcEndDay !== DEFAULT_ARC_END_DAY);
+    weeklyAchievementNote.textContent = activeArcEndDay === DEFAULT_ARC_END_DAY
+      ? "Weekly achievements need Mon-Fri stable for 60s."
+      : "Weekly achievements are paused unless this is Mon-Fri.";
+  }
   syncRangeLabels();
 }
 
@@ -523,6 +531,14 @@ function update() {
   setMood(progress);
   updatePayday(now);
   checkMilestones(progress, bounds);
+  achievementSystem?.update({
+    progress,
+    mode: activeMode,
+    arcEndDay: activeArcEndDay,
+    noWork,
+    now,
+    bounds
+  });
 
   if (noWork) {
     statusEl.textContent = "Off";
