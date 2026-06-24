@@ -154,6 +154,40 @@ body::before {
   box-shadow: 0 0 calc(var(--energy) * 24px) hsl(var(--hue) 100% 60% / calc(var(--energy) * 0.34));
 }
 
+.warning-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid hsl(42 94% 48% / 0.34);
+  border-radius: 6px;
+  background: hsl(44 100% 86% / 0.64);
+  color: hsl(36 86% 28%);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 820;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow:
+    0 0 calc(8px + var(--energy) * 18px) hsl(42 100% 58% / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.62);
+}
+
+.warning-button:hover,
+.warning-button[data-active="true"] {
+  border-color: hsl(36 94% 42% / 0.54);
+  background: hsl(43 100% 78% / 0.76);
+  color: hsl(32 92% 24%);
+}
+
+.warning-button[data-active="true"] {
+  box-shadow:
+    0 0 calc(10px + var(--energy) * 24px) hsl(42 100% 58% / 0.30),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
+}
+
 .tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -190,6 +224,7 @@ body::before {
 
 .tab-button:focus-visible,
 .settings-toggle:focus-visible,
+.warning-button:focus-visible,
 .schedule-button:focus-visible,
 .setting-select:focus-visible {
   outline: 3px solid hsl(var(--hue) 100% 62% / 0.20);
@@ -456,6 +491,19 @@ body[data-scheme="prism"] .number {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.after-hours-notice {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid hsl(42 94% 48% / 0.22);
+  border-radius: 6px;
+  background: hsl(44 100% 89% / 0.58);
+  color: hsl(34 78% 25%);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .payday-strip {
@@ -924,6 +972,7 @@ body[data-scheme="prism"] .number {
     max-height: min(56svh, 420px);
     overscroll-behavior: contain;
   }
+
 }
 
 @media (max-width: 360px) {
