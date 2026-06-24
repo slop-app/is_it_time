@@ -7,6 +7,9 @@ const root = document.documentElement;
 const percentNumber = document.getElementById("percentNumber");
 const progressFill = document.getElementById("progressFill");
 const statusEl = document.getElementById("status");
+const testCountdownButton = document.getElementById("testCountdownButton");
+const afterHoursButton = document.getElementById("afterHoursButton");
+const afterHoursNotice = document.getElementById("afterHoursNotice");
 const windowLabel = document.getElementById("windowLabel");
 const currentTimeEl = document.getElementById("currentTime");
 const elapsedTimeEl = document.getElementById("elapsedTime");
@@ -25,9 +28,12 @@ const EFFECT_STORAGE_KEY = "isItTimeNumberEffect";
 const MODE_STORAGE_KEY = "isItTimeProgressMode";
 const ARC_END_DAY_STORAGE_KEY = "isItTimeArcEndDay";
 const SCHEDULE_STORAGE_KEY = "isItTimeWeeklySchedule";
+const AFTER_HOURS_COUNTDOWN_STORAGE_KEY = "isItTimeAfterHoursCountdown";
+const AFTER_HOURS_VISITS_STORAGE_KEY = "isItTimeAfterHoursVisits";
 const PAYDAY_DAY = 24;
 const DEFAULT_ARC_END_DAY = 3;
 const MILESTONE_STEP = 10;
+const TEST_COUNTDOWN_DURATION = 30000;
 const SCHEDULE_VALUES = ["work", "half", "off"];
 const SCHEDULE_LABELS = {
   work: "Work",
@@ -53,6 +59,11 @@ let milestoneState = {
   lastProgress: null,
   highestMilestone: 0
 };
+let afterHoursVisitState = {
+  key: "",
+  count: 0
+};
+let testCountdown = null;
 
 const flavorBank = {
   before: [
@@ -102,6 +113,13 @@ const flavorBank = {
     "The neon can rest now. So can you, ideally.",
     "Complete. The color did its job.",
     "The graph has no further notes."
+  ],
+  cooldown: [
+    "Work has clocked out. Let the number drift down.",
+    "A softer meter for a softer part of the day.",
+    "The countdown is handling the exit music.",
+    "Gentle descent mode. Nothing else to prove tonight.",
+    "The bar is walking itself home."
   ]
 };
 
@@ -308,6 +326,205 @@ function getScheduledDay(date, dayIndex = getWeekdayIndex(date)) {
   return { start, end, total, scheduleValue };
 }
 
+function getAfterHoursInfo(now) {
+  const todayStart = getDateAt(now, START_HOUR, START_MINUTE);
+  const todayEnd = getDateAt(now, END_HOUR, END_MINUTE);
+  let sourceDate = null;
+  let start = null;
+  let end = null;
+
+  if (now >= todayEnd) {
+    sourceDate = new Date(now);
+    start = todayEnd;
+    end = getDateAt(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), START_HOUR, START_MINUTE);
+  } else if (now < todayStart) {
+    sourceDate = new Date(now);
+    sourceDate.setDate(sourceDate.getDate() - 1);
+    start = getDateAt(sourceDate, END_HOUR, END_MINUTE);
+    end = todayStart;
+  } else {
+    return null;
+  }
+
+  const sourceDayIndex = getWeekdayIndex(sourceDate);
+  const sourcePeriod = getScheduledDay(sourceDate, sourceDayIndex);
+
+  if (sourcePeriod.scheduleValue === "off") return null;
+
+  const total = end - start;
+  const elapsed = clamp(now - start, 0, total);
+  const remaining = clamp(end - now, 0, total);
+  const progress = total > 0 ? clamp((remaining / total) * 100, 0, 100) : 0;
+
+  return {
+    key: `after:${start.getTime()}:${end.getTime()}:${sourcePeriod.scheduleValue}`,
+    start,
+    end,
+    total,
+    elapsed,
+    remaining,
+    progress,
+    visitCount: 0,
+    sourceDayIndex,
+    scheduleValue: sourcePeriod.scheduleValue
+  };
+}
+
+function readAfterHoursVisitRecord() {
+  try {
+    const parsedRecord = JSON.parse(localStorage.getItem(AFTER_HOURS_VISITS_STORAGE_KEY));
+
+    return parsedRecord && typeof parsedRecord === "object"
+      ? parsedRecord
+      : { key: "", count: 0 };
+  } catch {
+    return { key: "", count: 0 };
+  }
+}
+
+function getAfterHoursVisitCount(info) {
+  if (!info) return 0;
+  if (afterHoursVisitState.key === info.key) return afterHoursVisitState.count;
+
+  const record = readAfterHoursVisitRecord();
+  return record.key === info.key ? Number(record.count) || 0 : 0;
+}
+
+function registerAfterHoursVisit() {
+  const info = getAfterHoursInfo(new Date());
+
+  if (!info) {
+    afterHoursVisitState = { key: "", count: 0 };
+    return;
+  }
+
+  const record = readAfterHoursVisitRecord();
+  const previousCount = record.key === info.key ? Number(record.count) || 0 : 0;
+  const count = previousCount + 1;
+
+  afterHoursVisitState = {
+    key: info.key,
+    count
+  };
+  localStorage.setItem(AFTER_HOURS_VISITS_STORAGE_KEY, JSON.stringify({ key: info.key, count }));
+}
+
+function getAfterHoursCountdownKey() {
+  return localStorage.getItem(AFTER_HOURS_COUNTDOWN_STORAGE_KEY) || "";
+}
+
+function isAfterHoursCountdownActive(info) {
+  return Boolean(info && getAfterHoursCountdownKey() === info.key);
+}
+
+function syncAfterHoursCountdownKey(info) {
+  const storedKey = getAfterHoursCountdownKey();
+
+  if (storedKey && (!info || storedKey !== info.key)) {
+    localStorage.removeItem(AFTER_HOURS_COUNTDOWN_STORAGE_KEY);
+  }
+}
+
+function startAfterHoursCountdown(info) {
+  if (!info) return;
+  localStorage.setItem(AFTER_HOURS_COUNTDOWN_STORAGE_KEY, info.key);
+  update();
+}
+
+function getAfterHoursWarningText(info) {
+  if (!info) return "";
+
+  const visitCount = getAfterHoursVisitCount(info);
+  if (visitCount < 10) return "";
+
+  return `After-hours check #${visitCount}. Gentle warning: the work window is already closed.`;
+}
+
+function updateAfterHoursControls(info) {
+  syncAfterHoursCountdownKey(info);
+
+  if (!info) {
+    afterHoursButton.hidden = true;
+    afterHoursButton.dataset.active = "false";
+    afterHoursNotice.hidden = true;
+    afterHoursNotice.textContent = "";
+    return;
+  }
+
+  const isActive = isAfterHoursCountdownActive(info);
+  const warningText = getAfterHoursWarningText(info);
+
+  afterHoursButton.hidden = false;
+  afterHoursButton.dataset.active = String(isActive);
+  afterHoursButton.title = isActive ? "After-hours countdown running" : "Start after-hours countdown";
+  afterHoursButton.setAttribute(
+    "aria-label",
+    isActive ? "After-hours countdown running" : "Start after-hours countdown"
+  );
+
+  if (isActive || warningText) {
+    afterHoursNotice.hidden = false;
+    afterHoursNotice.textContent = warningText || `After-hours countdown running until ${formatClock(info.end)}.`;
+  } else {
+    afterHoursNotice.hidden = true;
+    afterHoursNotice.textContent = "";
+  }
+}
+
+function getWorkingHoursInfo(now) {
+  const bounds = getDailyBounds(now);
+  const isWorking = !bounds.noWork && now >= bounds.start && now < bounds.end;
+
+  return { ...bounds, isWorking };
+}
+
+function getTestCountdownInfo(now) {
+  if (!testCountdown) return null;
+
+  if (now >= testCountdown.end) {
+    testCountdown = null;
+    return null;
+  }
+
+  const total = testCountdown.end - testCountdown.start;
+  const elapsed = clamp(now - testCountdown.start, 0, total);
+  const remaining = clamp(testCountdown.end - now, 0, total);
+  const progress = total > 0 ? clamp((remaining / total) * 100, 0, 100) : 0;
+
+  return {
+    key: testCountdown.key,
+    start: testCountdown.start,
+    end: testCountdown.end,
+    total,
+    elapsed,
+    remaining,
+    progress
+  };
+}
+
+function startTestCountdown() {
+  const now = new Date();
+
+  testCountdown = {
+    key: `test:${now.getTime()}`,
+    start: now,
+    end: new Date(now.getTime() + TEST_COUNTDOWN_DURATION)
+  };
+  update();
+}
+
+function updateTestControls(now, testInfo) {
+  const isWorking = getWorkingHoursInfo(now).isWorking;
+
+  testCountdownButton.hidden = !isWorking && !testInfo;
+  testCountdownButton.dataset.active = String(Boolean(testInfo));
+  testCountdownButton.title = testInfo ? "Test countdown running" : "Run a short test countdown";
+  testCountdownButton.setAttribute(
+    "aria-label",
+    testInfo ? "Test countdown running" : "Run a short test countdown"
+  );
+}
+
 function getScheduledElapsed(period, now) {
   if (period.total === 0) return 0;
   return clamp(now - period.start, 0, period.total);
@@ -361,6 +578,74 @@ function getArcBounds(now) {
 document.addEventListener("click", (event) => {
   if (!settingsMenu.open || settingsMenu.contains(event.target)) return;
   settingsMenu.open = false;
+});
+
+testCountdownButton.addEventListener("click", () => {
+  const now = new Date();
+  const testInfo = getTestCountdownInfo(now);
+
+  if (testInfo) {
+    showNotice({
+      title: "Test running",
+      message: `The test countdown is running. ${formatDuration(testInfo.remaining)} left.`,
+      mark: "T"
+    });
+    return;
+  }
+
+  if (!getWorkingHoursInfo(now).isWorking) {
+    showNotice({
+      title: "Test unavailable",
+      message: "The test button is only available during working hours on a work or half day.",
+      mark: "i"
+    });
+    return;
+  }
+
+  showNotice({
+    title: "Test countdown",
+    message: "Start a 30-second countdown from 100% to 0%? This is only for checking the after-hours behavior quickly.",
+    mark: "T",
+    confirmLabel: "Start test",
+    cancelLabel: "Not now",
+    onConfirm: startTestCountdown
+  });
+});
+
+afterHoursButton.addEventListener("click", () => {
+  const info = getAfterHoursInfo(new Date());
+
+  if (!info) {
+    showNotice({
+      title: "Countdown unavailable",
+      message: "The after-hours countdown opens from 18:00 to the next 09:00 on non-leave days.",
+      mark: "i"
+    });
+    return;
+  }
+
+  if (isAfterHoursCountdownActive(info)) {
+    showNotice({
+      title: "Already running",
+      message: `The after-hours countdown is running. ${formatDuration(info.remaining)} left until ${formatClock(info.end)}.`,
+      mark: "!"
+    });
+    return;
+  }
+
+  const visitCount = getAfterHoursVisitCount(info);
+  const checkBackWarning = visitCount >= 10
+    ? ` This is after-hours check #${visitCount}, so this is the soft nudge you asked for.`
+    : "";
+
+  showNotice({
+    title: "After-hours countdown",
+    message: `The work window has ended. Start the countdown from 100% to 0% until ${formatClock(info.end)}?${checkBackWarning}`,
+    mark: "!",
+    confirmLabel: "Start",
+    cancelLabel: "Not now",
+    onConfirm: () => startAfterHoursCountdown(info)
+  });
 });
 
 function getBounds(now) {
@@ -510,8 +795,56 @@ function checkMilestones(progress, bounds) {
   milestoneState.lastProgress = progress;
 }
 
+function updateAfterHoursCountdown(now, info) {
+  const progress = info.progress;
+
+  windowLabel.textContent = "After hours";
+  percentNumber.textContent = progress.toFixed(5).padStart(8, "0");
+  progressFill.style.width = `${progress}%`;
+  currentTimeEl.textContent = formatClock(now);
+  elapsedTimeEl.textContent = formatDuration(info.elapsed);
+  remainingTimeEl.textContent = formatDuration(info.remaining);
+  statusEl.textContent = "Cooldown";
+  flavorText.textContent = selectedFlavor.cooldown;
+  setMood(progress);
+  updatePayday(now);
+}
+
+function updateTestCountdown(now, info) {
+  const progress = info.progress;
+
+  windowLabel.textContent = "Test countdown";
+  percentNumber.textContent = progress.toFixed(5).padStart(8, "0");
+  progressFill.style.width = `${progress}%`;
+  currentTimeEl.textContent = formatClock(now);
+  elapsedTimeEl.textContent = formatDuration(info.elapsed);
+  remainingTimeEl.textContent = formatDuration(info.remaining);
+  statusEl.textContent = "Test";
+  flavorText.textContent = "Short countdown test. The normal meter will be right back.";
+  setMood(progress);
+  updatePayday(now);
+}
+
 function update() {
   const now = new Date();
+  const afterHoursInfo = getAfterHoursInfo(now);
+  const testInfo = getTestCountdownInfo(now);
+
+  updateTestControls(now, testInfo);
+  updateAfterHoursControls(afterHoursInfo);
+
+  if (testInfo) {
+    updateTestCountdown(now, testInfo);
+    return;
+  }
+
+  if (isAfterHoursCountdownActive(afterHoursInfo)) {
+    updateAfterHoursCountdown(now, afterHoursInfo);
+    return;
+  }
+
+  syncRangeLabels();
+
   const bounds = getBounds(now);
   const { start, end, total, elapsed, noWork } = bounds;
   const progress = noWork ? 100 : clamp((elapsed / total) * 100, 0, 100);
@@ -566,4 +899,5 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
+registerAfterHoursVisit();
 animate();

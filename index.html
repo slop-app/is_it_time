@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Signal App</title>
   <link rel="stylesheet" href="styles/app.css" />
+  <link rel="stylesheet" href="styles/notifications.css" />
 </head>
 
 <body>
@@ -17,6 +18,12 @@
         <div class="range" id="windowLabel">Today</div>
       </div>
       <div class="top-controls">
+        <button class="test-button" id="testCountdownButton" type="button" aria-label="Test countdown" title="Test countdown" hidden>
+          Test
+        </button>
+        <button class="warning-button" id="afterHoursButton" type="button" aria-label="After-hours notice" title="After-hours notice" hidden>
+          !
+        </button>
         <div class="status" id="status">Loading</div>
         <details class="settings" id="settingsMenu">
           <summary class="settings-toggle" aria-label="Settings" title="Settings">
@@ -120,6 +127,7 @@
       </div>
 
       <div class="flavor" id="flavorText">Ignition check.</div>
+      <div class="after-hours-notice" id="afterHoursNotice" hidden></div>
 
       <div class="payday-strip" aria-label="Payday countdown">
         <div class="payday-copy">
@@ -131,6 +139,23 @@
     </section>
 
   </main>
+
+  <div class="notice-modal" id="noticeModal" role="dialog" aria-modal="true" aria-labelledby="noticeTitle" aria-describedby="noticeMessage" hidden>
+    <div class="notice-backdrop" data-notice-close></div>
+    <div class="notice-panel">
+      <div class="notice-mark" id="noticeMark">!</div>
+      <div class="notice-content">
+        <h2 class="notice-title" id="noticeTitle">Notice</h2>
+        <p class="notice-message" id="noticeMessage"></p>
+        <div class="notice-actions">
+          <button class="notice-button notice-button-secondary" id="noticeCancelButton" type="button">Cancel</button>
+          <button class="notice-button notice-button-primary" id="noticeConfirmButton" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts/notifications.js"></script>
   <script src="scripts/app.js"></script>
 </body>
 </html>
