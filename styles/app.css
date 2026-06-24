@@ -154,8 +154,7 @@ body::before {
   box-shadow: 0 0 calc(var(--energy) * 24px) hsl(var(--hue) 100% 60% / calc(var(--energy) * 0.34));
 }
 
-.warning-button,
-.test-button {
+.warning-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -174,24 +173,6 @@ body::before {
   box-shadow:
     0 0 calc(8px + var(--energy) * 18px) hsl(42 100% 58% / 0.18),
     inset 0 1px 0 rgb(255 255 255 / 0.62);
-}
-
-.test-button {
-  width: auto;
-  min-width: 44px;
-  padding: 0 10px;
-  border-color: hsl(var(--hue) 92% 56% / calc(0.16 + var(--energy) * 0.34));
-  background: rgb(255 255 255 / 0.48);
-  color: hsl(var(--hue) calc(18% + var(--energy) * 62%) calc(27% + var(--energy) * 8%));
-  font-size: 12px;
-  font-weight: 760;
-  box-shadow: 0 0 calc(var(--energy) * 18px) hsl(var(--hue) 100% 62% / calc(var(--energy) * 0.22));
-}
-
-.test-button:hover,
-.test-button[data-active="true"] {
-  border-color: hsl(var(--hue) 94% 48% / 0.54);
-  background: rgb(255 255 255 / 0.68);
 }
 
 .warning-button:hover,
@@ -244,7 +225,6 @@ body::before {
 .tab-button:focus-visible,
 .settings-toggle:focus-visible,
 .warning-button:focus-visible,
-.test-button:focus-visible,
 .schedule-button:focus-visible,
 .setting-select:focus-visible {
   outline: 3px solid hsl(var(--hue) 100% 62% / 0.20);
@@ -917,11 +897,6 @@ body[data-scheme="prism"] .number {
   .status {
     max-width: min(32vw, 96px);
     text-align: right;
-  }
-
-  .test-button {
-    min-width: 40px;
-    padding-inline: 8px;
   }
 
   .top-controls {

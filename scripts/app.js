@@ -7,7 +7,6 @@ const root = document.documentElement;
 const percentNumber = document.getElementById("percentNumber");
 const progressFill = document.getElementById("progressFill");
 const statusEl = document.getElementById("status");
-const testCountdownButton = document.getElementById("testCountdownButton");
 const afterHoursButton = document.getElementById("afterHoursButton");
 const afterHoursNotice = document.getElementById("afterHoursNotice");
 const windowLabel = document.getElementById("windowLabel");
@@ -33,7 +32,6 @@ const AFTER_HOURS_VISITS_STORAGE_KEY = "isItTimeAfterHoursVisits";
 const PAYDAY_DAY = 24;
 const DEFAULT_ARC_END_DAY = 3;
 const MILESTONE_STEP = 10;
-const TEST_COUNTDOWN_DURATION = 30000;
 const SCHEDULE_VALUES = ["work", "half", "off"];
 const SCHEDULE_LABELS = {
   work: "Work",
@@ -63,7 +61,6 @@ let afterHoursVisitState = {
   key: "",
   count: 0
 };
-let testCountdown = null;
 
 const flavorBank = {
   before: [
@@ -471,60 +468,6 @@ function updateAfterHoursControls(info) {
   }
 }
 
-function getWorkingHoursInfo(now) {
-  const bounds = getDailyBounds(now);
-  const isWorking = !bounds.noWork && now >= bounds.start && now < bounds.end;
-
-  return { ...bounds, isWorking };
-}
-
-function getTestCountdownInfo(now) {
-  if (!testCountdown) return null;
-
-  if (now >= testCountdown.end) {
-    testCountdown = null;
-    return null;
-  }
-
-  const total = testCountdown.end - testCountdown.start;
-  const elapsed = clamp(now - testCountdown.start, 0, total);
-  const remaining = clamp(testCountdown.end - now, 0, total);
-  const progress = total > 0 ? clamp((remaining / total) * 100, 0, 100) : 0;
-
-  return {
-    key: testCountdown.key,
-    start: testCountdown.start,
-    end: testCountdown.end,
-    total,
-    elapsed,
-    remaining,
-    progress
-  };
-}
-
-function startTestCountdown() {
-  const now = new Date();
-
-  testCountdown = {
-    key: `test:${now.getTime()}`,
-    start: now,
-    end: new Date(now.getTime() + TEST_COUNTDOWN_DURATION)
-  };
-  update();
-}
-
-function updateTestControls(now, testInfo) {
-  const isWorking = getWorkingHoursInfo(now).isWorking;
-
-  testCountdownButton.hidden = !isWorking && !testInfo;
-  testCountdownButton.dataset.active = String(Boolean(testInfo));
-  testCountdownButton.title = testInfo ? "Test countdown running" : "Run a short test countdown";
-  testCountdownButton.setAttribute(
-    "aria-label",
-    testInfo ? "Test countdown running" : "Run a short test countdown"
-  );
-}
-
 function getScheduledElapsed(period, now) {
   if (period.total === 0) return 0;
   return clamp(now - period.start, 0, period.total);
@@ -578,38 +521,6 @@ function getArcBounds(now) {
 document.addEventListener("click", (event) => {
   if (!settingsMenu.open || settingsMenu.contains(event.target)) return;
   settingsMenu.open = false;
-});
-
-testCountdownButton.addEventListener("click", () => {
-  const now = new Date();
-  const testInfo = getTestCountdownInfo(now);
-
-  if (testInfo) {
-    showNotice({
-      title: "Test running",
-      message: `The test countdown is running. ${formatDuration(testInfo.remaining)} left.`,
-      mark: "T"
-    });
-    return;
-  }
-
-  if (!getWorkingHoursInfo(now).isWorking) {
-    showNotice({
-      title: "Test unavailable",
-      message: "The test button is only available during working hours on a work or half day.",
-      mark: "i"
-    });
-    return;
-  }
-
-  showNotice({
-    title: "Test countdown",
-    message: "Start a 30-second countdown from 100% to 0%? This is only for checking the after-hours behavior quickly.",
-    mark: "T",
-    confirmLabel: "Start test",
-    cancelLabel: "Not now",
-    onConfirm: startTestCountdown
-  });
 });
 
 afterHoursButton.addEventListener("click", () => {
@@ -810,33 +721,11 @@ function updateAfterHoursCountdown(now, info) {
   updatePayday(now);
 }
 
-function updateTestCountdown(now, info) {
-  const progress = info.progress;
-
-  windowLabel.textContent = "Test countdown";
-  percentNumber.textContent = progress.toFixed(5).padStart(8, "0");
-  progressFill.style.width = `${progress}%`;
-  currentTimeEl.textContent = formatClock(now);
-  elapsedTimeEl.textContent = formatDuration(info.elapsed);
-  remainingTimeEl.textContent = formatDuration(info.remaining);
-  statusEl.textContent = "Test";
-  flavorText.textContent = "Short countdown test. The normal meter will be right back.";
-  setMood(progress);
-  updatePayday(now);
-}
-
 function update() {
   const now = new Date();
   const afterHoursInfo = getAfterHoursInfo(now);
-  const testInfo = getTestCountdownInfo(now);
 
-  updateTestControls(now, testInfo);
   updateAfterHoursControls(afterHoursInfo);
-
-  if (testInfo) {
-    updateTestCountdown(now, testInfo);
-    return;
-  }
 
   if (isAfterHoursCountdownActive(afterHoursInfo)) {
     updateAfterHoursCountdown(now, afterHoursInfo);
