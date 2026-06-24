@@ -428,6 +428,11 @@ function startAfterHoursCountdown(info) {
   update();
 }
 
+function stopAfterHoursCountdown() {
+  localStorage.removeItem(AFTER_HOURS_COUNTDOWN_STORAGE_KEY);
+  update();
+}
+
 function getAfterHoursWarningText(info) {
   if (!info) return "";
 
@@ -453,10 +458,10 @@ function updateAfterHoursControls(info) {
 
   afterHoursButton.hidden = false;
   afterHoursButton.dataset.active = String(isActive);
-  afterHoursButton.title = isActive ? "After-hours countdown running" : "Start after-hours countdown";
+  afterHoursButton.title = isActive ? "Return to normal screen" : "Start after-hours countdown";
   afterHoursButton.setAttribute(
     "aria-label",
-    isActive ? "After-hours countdown running" : "Start after-hours countdown"
+    isActive ? "Return to normal screen" : "Start after-hours countdown"
   );
 
   if (isActive || warningText) {
@@ -537,9 +542,12 @@ afterHoursButton.addEventListener("click", () => {
 
   if (isAfterHoursCountdownActive(info)) {
     showNotice({
-      title: "Already running",
-      message: `The after-hours countdown is running. ${formatDuration(info.remaining)} left until ${formatClock(info.end)}.`,
-      mark: "!"
+      title: "Countdown running",
+      message: `The after-hours countdown is running. ${formatDuration(info.remaining)} left until ${formatClock(info.end)}. Return to the normal screen?`,
+      mark: "!",
+      confirmLabel: "Return",
+      cancelLabel: "Keep countdown",
+      onConfirm: stopAfterHoursCountdown
     });
     return;
   }
