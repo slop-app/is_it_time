@@ -22,6 +22,15 @@
           !
         </button>
         <div class="status" id="status">Loading</div>
+        <button class="share-button" id="shareButton" type="button" aria-label="Copy share card" title="Copy share card">
+          <svg class="share-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+          </svg>
+          <span class="visually-hidden">Copy share card</span>
+        </button>
         <details class="settings" id="settingsMenu">
           <summary class="settings-toggle" aria-label="Settings" title="Settings">
             <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -136,6 +145,8 @@
     </section>
 
   </main>
+
+  <div class="share-toast" id="shareToast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <div class="notice-modal" id="noticeModal" role="dialog" aria-modal="true" aria-labelledby="noticeTitle" aria-describedby="noticeMessage" hidden>
     <div class="notice-backdrop" data-notice-close></div>

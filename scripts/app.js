@@ -9,6 +9,8 @@ const progressFill = document.getElementById("progressFill");
 const statusEl = document.getElementById("status");
 const afterHoursButton = document.getElementById("afterHoursButton");
 const afterHoursNotice = document.getElementById("afterHoursNotice");
+const shareButton = document.getElementById("shareButton");
+const shareToast = document.getElementById("shareToast");
 const windowLabel = document.getElementById("windowLabel");
 const currentTimeEl = document.getElementById("currentTime");
 const elapsedTimeEl = document.getElementById("elapsedTime");
@@ -32,6 +34,8 @@ const AFTER_HOURS_VISITS_STORAGE_KEY = "isItTimeAfterHoursVisits";
 const PAYDAY_DAY = 24;
 const DEFAULT_ARC_END_DAY = 3;
 const MILESTONE_STEP = 10;
+const SHARE_CARD_WIDTH = 1200;
+const SHARE_CARD_HEIGHT = 630;
 const SCHEDULE_VALUES = ["work", "half", "off"];
 const SCHEDULE_LABELS = {
   work: "Work",
@@ -61,6 +65,8 @@ let afterHoursVisitState = {
   key: "",
   count: 0
 };
+let shareToastTimer = 0;
+let shareToastFrame = 0;
 
 const flavorBank = {
   before: [
@@ -142,6 +148,8 @@ effectSelect.addEventListener("change", () => {
 });
 
 function normalizeArcEndDay(day) {
+  if (day === null || day === "") return DEFAULT_ARC_END_DAY;
+
   const numericDay = Number(day);
   return Number.isInteger(numericDay) && numericDay >= 0 && numericDay < WEEKDAY_LABELS.length
     ? numericDay
@@ -266,6 +274,19 @@ function formatDuration(milliseconds) {
   return `${seconds}s`;
 }
 
+function formatShareDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${pad(hours)}h`;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`;
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+  return `${seconds}s`;
+}
+
 function formatPaydayCountdown(milliseconds) {
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
   const days = Math.floor(totalSeconds / 86400);
@@ -323,30 +344,45 @@ function getScheduledDay(date, dayIndex = getWeekdayIndex(date)) {
   return { start, end, total, scheduleValue };
 }
 
-function getAfterHoursInfo(now) {
-  const todayStart = getDateAt(now, START_HOUR, START_MINUTE);
-  const todayEnd = getDateAt(now, END_HOUR, END_MINUTE);
-  let sourceDate = null;
-  let start = null;
-  let end = null;
+function findPreviousScheduledPeriod(now) {
+  for (let offset = 0; offset <= WEEKDAY_LABELS.length; offset += 1) {
+    const date = new Date(now);
+    date.setDate(now.getDate() - offset);
+    const period = getScheduledDay(date);
 
-  if (now >= todayEnd) {
-    sourceDate = new Date(now);
-    start = todayEnd;
-    end = getDateAt(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), START_HOUR, START_MINUTE);
-  } else if (now < todayStart) {
-    sourceDate = new Date(now);
-    sourceDate.setDate(sourceDate.getDate() - 1);
-    start = getDateAt(sourceDate, END_HOUR, END_MINUTE);
-    end = todayStart;
-  } else {
-    return null;
+    if (period.total > 0 && period.end <= now) return period;
   }
 
-  const sourceDayIndex = getWeekdayIndex(sourceDate);
-  const sourcePeriod = getScheduledDay(sourceDate, sourceDayIndex);
+  return null;
+}
 
-  if (sourcePeriod.scheduleValue === "off") return null;
+function findNextScheduledPeriod(now) {
+  for (let offset = 0; offset <= WEEKDAY_LABELS.length; offset += 1) {
+    const date = new Date(now);
+    date.setDate(now.getDate() + offset);
+    const period = getScheduledDay(date);
+
+    if (period.total > 0 && period.start > now) return period;
+  }
+
+  return null;
+}
+
+function formatCountdownTarget(date) {
+  return `${WEEKDAY_LABELS[getWeekdayIndex(date)]} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function getAfterHoursInfo(now) {
+  const currentPeriod = getScheduledDay(now);
+  if (currentPeriod.total > 0 && now >= currentPeriod.start && now < currentPeriod.end) return null;
+
+  const sourcePeriod = findPreviousScheduledPeriod(now);
+  const nextPeriod = findNextScheduledPeriod(now);
+  if (!sourcePeriod || !nextPeriod) return null;
+
+  const start = sourcePeriod.end;
+  const end = nextPeriod.start;
+  const sourceDayIndex = getWeekdayIndex(sourcePeriod.start);
 
   const total = end - start;
   const elapsed = clamp(now - start, 0, total);
@@ -361,7 +397,6 @@ function getAfterHoursInfo(now) {
     elapsed,
     remaining,
     progress,
-    visitCount: 0,
     sourceDayIndex,
     scheduleValue: sourcePeriod.scheduleValue
   };
@@ -466,7 +501,7 @@ function updateAfterHoursControls(info) {
 
   if (isActive || warningText) {
     afterHoursNotice.hidden = false;
-    afterHoursNotice.textContent = warningText || `After-hours countdown running until ${formatClock(info.end)}.`;
+    afterHoursNotice.textContent = warningText || `After-hours countdown running until ${formatCountdownTarget(info.end)}.`;
   } else {
     afterHoursNotice.hidden = true;
     afterHoursNotice.textContent = "";
@@ -534,7 +569,7 @@ afterHoursButton.addEventListener("click", () => {
   if (!info) {
     showNotice({
       title: "Countdown unavailable",
-      message: "The after-hours countdown opens from 18:00 to the next 09:00 on non-leave days.",
+      message: "The countdown is available between the end of a scheduled workday and the next scheduled workday.",
       mark: "i"
     });
     return;
@@ -543,7 +578,7 @@ afterHoursButton.addEventListener("click", () => {
   if (isAfterHoursCountdownActive(info)) {
     showNotice({
       title: "Countdown running",
-      message: `The after-hours countdown is running. ${formatDuration(info.remaining)} left until ${formatClock(info.end)}. Return to the normal screen?`,
+      message: `The after-hours countdown is running. ${formatShareDuration(info.remaining)} left until ${formatCountdownTarget(info.end)}. Return to the normal screen?`,
       mark: "!",
       confirmLabel: "Return",
       cancelLabel: "Keep countdown",
@@ -559,7 +594,7 @@ afterHoursButton.addEventListener("click", () => {
 
   showNotice({
     title: "After-hours countdown",
-    message: `The work window has ended. Start the countdown from 100% to 0% until ${formatClock(info.end)}?${checkBackWarning}`,
+    message: `The work window has ended. Start the countdown from 100% to 0% until ${formatCountdownTarget(info.end)}?${checkBackWarning}`,
     mark: "!",
     confirmLabel: "Start",
     cancelLabel: "Not now",
@@ -570,6 +605,328 @@ afterHoursButton.addEventListener("click", () => {
 function getBounds(now) {
   return activeMode === "arc" ? getArcBounds(now) : getDailyBounds(now);
 }
+
+function getCleanPageUrl() {
+  try {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = "";
+    return url.href;
+  } catch {
+    return window.location.href.split(/[?#]/, 1)[0];
+  }
+}
+
+function getShareSnapshot(now = new Date()) {
+  const afterHoursInfo = getAfterHoursInfo(now);
+  const pageUrl = getCleanPageUrl();
+
+  if (isAfterHoursCountdownActive(afterHoursInfo)) {
+    return {
+      heading: "UNTIL WORK STARTS",
+      range: "COOLDOWN",
+      value: `${afterHoursInfo.progress.toFixed(5)}%`,
+      qualifier: "remaining",
+      detail: `${formatShareDuration(afterHoursInfo.remaining)} until ${formatCountdownTarget(afterHoursInfo.end)}`,
+      progress: afterHoursInfo.progress,
+      pageUrl,
+      now
+    };
+  }
+
+  const bounds = getBounds(now);
+  const progress = bounds.noWork ? 0 : clamp((bounds.elapsed / bounds.total) * 100, 0, 100);
+  const remaining = Math.max(0, bounds.total - bounds.elapsed);
+  const isComplete = !bounds.noWork && (remaining <= 0 || now >= bounds.end);
+
+  if (activeMode === "arc") {
+    const range = getArcRangeLabel();
+    return {
+      heading: "THIS WEEK",
+      range,
+      value: bounds.noWork ? "OFF" : `${progress.toFixed(5)}%`,
+      qualifier: bounds.noWork ? "" : "complete",
+      detail: bounds.noWork
+        ? "No work scheduled in this range"
+        : isComplete
+          ? "Scheduled range complete"
+          : `${formatShareDuration(remaining)} scheduled time left`,
+      progress,
+      pageUrl,
+      now
+    };
+  }
+
+  return {
+    heading: "TODAY",
+    range: "WORKDAY",
+    value: bounds.noWork ? "OFF" : `${progress.toFixed(5)}%`,
+    qualifier: bounds.noWork ? "" : "complete",
+    detail: bounds.noWork
+      ? "No work scheduled today"
+      : isComplete
+        ? "Workday complete"
+        : `${formatShareDuration(remaining)} left today`,
+    progress,
+    pageUrl,
+    now
+  };
+}
+
+function roundedRectPath(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  context.lineTo(x + safeRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+}
+
+function fitCanvasText(context, text, maxWidth, startSize, minSize, weight = 800) {
+  let size = startSize;
+  do {
+    context.font = `${weight} ${size}px "Segoe UI", Arial, sans-serif`;
+    if (context.measureText(text).width <= maxWidth) return size;
+    size -= 2;
+  } while (size > minSize);
+
+  return minSize;
+}
+
+function truncateCanvasText(context, text, maxWidth) {
+  if (context.measureText(text).width <= maxWidth) return text;
+
+  let truncated = text;
+  while (truncated.length > 1 && context.measureText(`${truncated}…`).width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated}…`;
+}
+
+function renderShareCard(snapshot) {
+  const canvas = document.createElement("canvas");
+  canvas.width = SHARE_CARD_WIDTH;
+  canvas.height = SHARE_CARD_HEIGHT;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is unavailable");
+
+  const hue = 205 + snapshot.progress * 2.55;
+  const accent = `hsl(${hue.toFixed(1)}, 88%, 55%)`;
+  const accentTwo = `hsl(${((hue + 112) % 360).toFixed(1)}, 86%, 58%)`;
+  const accentThree = `hsl(${((hue + 224) % 360).toFixed(1)}, 82%, 60%)`;
+
+  const backdrop = context.createLinearGradient(0, 0, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT);
+  backdrop.addColorStop(0, "#f8f8f4");
+  backdrop.addColorStop(0.48, "#eef0ea");
+  backdrop.addColorStop(1, `hsla(${hue.toFixed(1)}, 72%, 78%, 0.72)`);
+  context.fillStyle = backdrop;
+  context.fillRect(0, 0, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT);
+
+  context.save();
+  context.globalAlpha = 0.16;
+  context.translate(860, -180);
+  context.rotate(-0.22);
+  const bands = [accent, accentTwo, accentThree];
+  bands.forEach((color, index) => {
+    context.fillStyle = color;
+    context.fillRect(index * 96, 0, 64, 920);
+  });
+  context.restore();
+
+  context.save();
+  context.shadowColor = `hsla(${hue.toFixed(1)}, 90%, 48%, 0.24)`;
+  context.shadowBlur = 44;
+  context.shadowOffsetY = 18;
+  roundedRectPath(context, 54, 44, 1092, 542, 22);
+  context.fillStyle = "rgba(255, 255, 252, 0.91)";
+  context.fill();
+  context.restore();
+
+  const edge = context.createLinearGradient(72, 0, 1128, 0);
+  edge.addColorStop(0, accent);
+  edge.addColorStop(0.5, accentTwo);
+  edge.addColorStop(1, accentThree);
+  roundedRectPath(context, 76, 64, 1048, 7, 4);
+  context.fillStyle = edge;
+  context.fill();
+
+  context.textBaseline = "alphabetic";
+  context.fillStyle = "#68706c";
+  context.font = "700 22px \"Segoe UI\", Arial, sans-serif";
+  context.fillText("IS IT TIME?", 96, 120);
+
+  context.textAlign = "right";
+  context.fillStyle = "#5f6864";
+  context.font = "700 20px \"Segoe UI\", Arial, sans-serif";
+  context.fillText(snapshot.range, 1104, 120);
+  context.textAlign = "left";
+
+  context.fillStyle = "#171b18";
+  context.font = "800 38px \"Segoe UI\", Arial, sans-serif";
+  context.fillText(snapshot.heading, 96, 176);
+
+  const valueGradient = context.createLinearGradient(96, 0, 1010, 0);
+  valueGradient.addColorStop(0, "#171b18");
+  valueGradient.addColorStop(0.34, accent);
+  valueGradient.addColorStop(0.68, accentTwo);
+  valueGradient.addColorStop(1, accentThree);
+  const valueSize = fitCanvasText(context, snapshot.value, 1008, 132, 82);
+  context.font = `820 ${valueSize}px "Segoe UI", Arial, sans-serif`;
+  context.fillStyle = valueGradient;
+  context.shadowColor = `hsla(${hue.toFixed(1)}, 90%, 52%, 0.22)`;
+  context.shadowBlur = 24;
+  context.fillText(snapshot.value, 92, 322);
+  context.shadowBlur = 0;
+
+  if (snapshot.qualifier) {
+    context.fillStyle = "#69716d";
+    context.font = "650 27px \"Segoe UI\", Arial, sans-serif";
+    context.fillText(snapshot.qualifier, 98, 365);
+  }
+
+  context.fillStyle = "#2a312d";
+  context.font = "700 35px \"Segoe UI\", Arial, sans-serif";
+  context.fillText(snapshot.detail, 96, 422);
+
+  roundedRectPath(context, 96, 458, 1008, 20, 10);
+  context.fillStyle = "rgba(24, 29, 26, 0.10)";
+  context.fill();
+
+  const fillWidth = 1008 * clamp(snapshot.progress / 100, 0, 1);
+  if (fillWidth > 0) {
+    roundedRectPath(context, 96, 458, Math.max(20, fillWidth), 20, 10);
+    context.fillStyle = edge;
+    context.fill();
+  }
+
+  context.strokeStyle = "rgba(24, 29, 26, 0.10)";
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(96, 512);
+  context.lineTo(1104, 512);
+  context.stroke();
+
+  context.fillStyle = "#626b67";
+  context.font = "600 22px \"Segoe UI\", Arial, sans-serif";
+  const safeUrl = truncateCanvasText(context, snapshot.pageUrl, 690);
+  context.fillText(safeUrl, 96, 556);
+
+  const sharedLabel = `${WEEKDAY_LABELS[getWeekdayIndex(snapshot.now)]} ${snapshot.now.getDate()} ${MONTH_LABELS[snapshot.now.getMonth()]} · ${pad(snapshot.now.getHours())}:${pad(snapshot.now.getMinutes())}`;
+  context.textAlign = "right";
+  context.fillStyle = "#858d89";
+  context.font = "600 20px \"Segoe UI\", Arial, sans-serif";
+  context.fillText(sharedLabel, 1104, 556);
+  context.textAlign = "left";
+
+  return canvas;
+}
+
+function canvasToPngBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Could not create share card"));
+    }, "image/png");
+  });
+}
+
+function formatShareFallback(snapshot) {
+  const valueLine = snapshot.qualifier
+    ? `${snapshot.value} ${snapshot.qualifier}`
+    : snapshot.value;
+  return [snapshot.heading, `${snapshot.range} · ${valueLine}`, snapshot.detail, snapshot.pageUrl].join("\n");
+}
+
+function fallbackCopyText(text) {
+  const activeElement = document.activeElement;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  } finally {
+    textarea.remove();
+    if (activeElement && typeof activeElement.focus === "function") activeElement.focus();
+  }
+  return copied;
+}
+
+async function copyFallbackText(text) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through for local files and browsers that deny clipboard access.
+    }
+  }
+  return fallbackCopyText(text);
+}
+
+async function copyShareCard(snapshot) {
+  if (
+    typeof ClipboardItem === "function" &&
+    navigator.clipboard &&
+    typeof navigator.clipboard.write === "function"
+  ) {
+    try {
+      const canvas = renderShareCard(snapshot);
+      const pngPromise = canvasToPngBlob(canvas);
+      const item = new ClipboardItem({ "image/png": pngPromise });
+      await navigator.clipboard.write([item]);
+      return "image";
+    } catch {
+      // Preserve sharing on browsers that support text but not image clipboard data.
+    }
+  }
+
+  return await copyFallbackText(formatShareFallback(snapshot)) ? "text" : "failed";
+}
+
+function showShareToast(message, type = "success") {
+  window.clearTimeout(shareToastTimer);
+  window.cancelAnimationFrame(shareToastFrame);
+  shareToast.classList.remove("is-visible");
+  shareToast.textContent = "";
+
+  shareToastFrame = window.requestAnimationFrame(() => {
+    shareToast.textContent = message;
+    shareToast.dataset.type = type;
+    shareToast.classList.add("is-visible");
+    shareToastTimer = window.setTimeout(() => {
+      shareToast.classList.remove("is-visible");
+    }, 1600);
+  });
+}
+
+shareButton.addEventListener("click", async () => {
+  shareButton.disabled = true;
+  shareButton.setAttribute("aria-busy", "true");
+
+  const result = await copyShareCard(getShareSnapshot());
+  if (result === "image") showShareToast("Share card copied");
+  else if (result === "text") showShareToast("Image unavailable · copied text");
+  else showShareToast("Couldn't copy share card", "error");
+
+  shareButton.disabled = false;
+  shareButton.removeAttribute("aria-busy");
+});
 
 function getPaydayInfo(now) {
   const paydayStart = new Date(now.getFullYear(), now.getMonth(), PAYDAY_DAY, 0, 0, 0, 0);
@@ -717,7 +1074,7 @@ function checkMilestones(progress, bounds) {
 function updateAfterHoursCountdown(now, info) {
   const progress = info.progress;
 
-  windowLabel.textContent = "After hours";
+  windowLabel.textContent = `Until ${formatCountdownTarget(info.end)}`;
   percentNumber.textContent = progress.toFixed(5).padStart(8, "0");
   progressFill.style.width = `${progress}%`;
   currentTimeEl.textContent = formatClock(now);
